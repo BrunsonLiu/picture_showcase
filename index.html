@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>意识群岛 | Mind Archipelago</title>
+
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0d0e10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei','Hiragino Sans GB','WenQuanYi Micro Hei',sans-serif;font-weight:300;color:#e8e4dd;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;cursor:none;user-select:none;-webkit-user-select:none}
+body.dragging{cursor:none}
+
+#noise{position:fixed;inset:0;z-index:9999;pointer-events:none;opacity:0.03;mix-blend-mode:soft-light;animation:noiseDrift 60s linear infinite}
+@keyframes noiseDrift{0%{transform:translate(0,0)}100%{transform:translate(-40px,-25px)}}
+#stars-canvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+#viewport{position:fixed;inset:0;z-index:1;overflow:hidden;touch-action:none}
+#world{position:absolute;top:0;left:0;width:0;height:0;transform-origin:0 0;transition:filter 0.6s cubic-bezier(0.2,0.9,0.3,1)}
+#world.blurred{filter:blur(10px) brightness(0.35)}
+@media(max-width:768px){#world.blurred{filter:blur(5px) brightness(0.4)}}
+
+#fog-canvas{position:fixed;inset:0;z-index:5;pointer-events:none;transition:opacity 2s ease}
+#fog-canvas.fog-hidden{opacity:0;transition:opacity 0.3s ease}
+#fog-canvas.fog-dissolved{opacity:0;pointer-events:none;transition:opacity 1.8s ease-in}
+
+#spotlight-glow{position:fixed;width:520px;height:520px;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);z-index:7;opacity:0;transition:opacity 0.5s ease;background:radial-gradient(circle at 49% 47%,rgba(245,225,200,0.025) 0%,rgba(220,195,160,0.01) 40%,transparent 68%)}
+#spotlight-glow.active{opacity:1}
+
+#cursor-dot{position:fixed;width:5px;height:5px;border-radius:50%;background:rgba(245,235,215,0.6);pointer-events:none;z-index:9998;transform:translate(-50%,-50%);transition:opacity 0.4s;box-shadow:0 0 10px rgba(230,210,170,0.35)}
+@media(hover:none){#cursor-dot{display:none}}
+
+#focus-overlay{position:fixed;inset:0;z-index:10;pointer-events:none;opacity:0;transition:opacity 0.6s cubic-bezier(0.2,0.9,0.3,1);background:transparent;touch-action:none}
+#focus-overlay.active{opacity:1;pointer-events:auto;cursor:pointer}
+
+#connection-canvas{position:fixed;inset:0;z-index:15;pointer-events:none}
+#focus-layer{position:fixed;inset:0;z-index:20;pointer-events:none}
+
+.island{position:absolute;cursor:none;opacity:0;transform:scale(0.88);transition:opacity 0.8s ease,transform 0.8s cubic-bezier(0.2,0.9,0.3,1)}
+.island.visible{opacity:1;transform:scale(1)}
+.island.hidden-by-focus{opacity:0!important;transform:scale(1)!important;transition:none!important}
+
+.island-label{
+  position:absolute;top:calc(100% + 14px);left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  opacity:0.55;transition:opacity 0.5s ease;
+  pointer-events:none;white-space:nowrap;
+}
+.island:hover .island-label,.island.visible .island-label{opacity:0.75}
+.island.revealed .island-label{opacity:0.9}
+.island-label .label-rule{width:32px;height:1px;background:rgba(196,167,106,0.5)}
+.island-label .label-num{font-size:9px;font-weight:500;letter-spacing:4px;color:rgba(196,167,106,0.6);font-variant:small-caps;text-transform:uppercase}
+.island-label .label-title{font-size:13px;font-weight:300;letter-spacing:5px;color:rgba(200,192,178,0.8);font-family:Georgia,'Times New Roman','Songti SC','SimSun',serif}
+
+.island-bob{width:100%;height:100%;animation:bob 7s ease-in-out infinite;animation-delay:var(--bob-delay,0s)}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+
+.island-glass{
+  position:relative;
+  width:100%;height:100%;
+  border-radius:20px 26px 22px 24px;
+  background:rgba(22,23,26,0.78);
+  border:1px solid rgba(255,255,255,0.06);
+  overflow:hidden;
+  transition:transform 0.4s cubic-bezier(0.2,0.9,0.3,1),box-shadow 0.4s ease;
+  box-shadow:0 2px 24px rgba(0,0,0,0.6),inset 0 0 0 1px rgba(255,255,255,0.025);
+}
+@supports(backdrop-filter:blur(10px)){
+  .island-glass{background:rgba(18,19,22,0.5);backdrop-filter:blur(14px) saturate(0.95);-webkit-backdrop-filter:blur(14px) saturate(0.95)}
+}
+.island:hover .island-glass{
+  transform:scale(1.06);
+  box-shadow:0 4px 36px rgba(0,0,0,0.65),inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+.island:focus-visible{outline:none}
+.island:focus-visible .island-glass{
+  transform:scale(1.06);
+  border-color:rgba(255,255,255,0.16);
+  box-shadow:0 4px 36px rgba(0,0,0,0.65),0 0 0 2px var(--glow-dim),inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+.island.revealed .island-glass{
+  border-color:rgba(255,255,255,0.09);
+  box-shadow:0 2px 30px rgba(0,0,0,0.55),inset 0 0 0 1px rgba(255,255,255,0.035);
+}
+
+.island-thumb{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,9,11,0.92)}
+.island-thumb img{width:100%;height:100%;object-fit:cover;opacity:0.5;transition:opacity 0.4s ease}
+.island:hover .island-thumb img{opacity:0.72}
+.island-thumb h3{
+  position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+  font-size:14px;font-weight:300;color:#e0dad0;letter-spacing:6px;
+  text-shadow:0 2px 20px rgba(0,0,0,0.96);white-space:nowrap;
+  font-family:Georgia,'Times New Roman','Songti SC','SimSun',serif;
+}
+
+.focus-card{
+  position:fixed;pointer-events:auto;
+  border-radius:2px;
+  overflow:hidden;
+  box-shadow:0 16px 80px rgba(0,0,0,0.85);
+}
+.focus-card.animating{
+  transition:left 0.5s cubic-bezier(0.16,1,0.3,1),
+             top 0.5s cubic-bezier(0.16,1,0.3,1),
+             width 0.5s cubic-bezier(0.16,1,0.3,1),
+             height 0.5s cubic-bezier(0.16,1,0.3,1),
+             box-shadow 0.4s ease;
+}
+.focus-card.shrinking{
+  transition:left 0.4s cubic-bezier(0.4,0,0.2,1),
+             top 0.4s cubic-bezier(0.4,0,0.2,1),
+             width 0.4s cubic-bezier(0.4,0,0.2,1),
+             height 0.4s cubic-bezier(0.4,0,0.2,1),
+             box-shadow 0.3s ease;
+}
+
+.focus-card-glass{
+  width:100%;height:100%;
+  background:rgba(12,13,15,0.96);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:2px;
+  position:relative;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+@supports(backdrop-filter:blur(10px)){
+  .focus-card-glass{background:rgba(8,9,11,0.88);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)}
+}
+
+.fc-thumb{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.2s ease;z-index:2;background:rgba(8,9,11,0.92)}
+.fc-thumb img{width:100%;height:100%;object-fit:cover;opacity:0.5}
+.fc-thumb h3{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:300;color:#e0dad0;letter-spacing:6px;text-shadow:0 2px 20px rgba(0,0,0,0.96);white-space:nowrap;font-family:Georgia,'Times New Roman','Songti SC','SimSun',serif}
+.focus-card.expanded .fc-thumb{opacity:0;pointer-events:none;transition:opacity 0.12s ease}
+
+.fc-detail{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity 0.4s ease 0.35s;z-index:1}
+.focus-card.expanded .fc-detail{opacity:1;pointer-events:auto}
+
+.fc-gallery-label{
+  flex:0 0 auto;padding:16px 32px 10px;
+  display:flex;align-items:baseline;gap:14px;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.fc-gallery-label .gl-num{font-size:10px;font-weight:400;letter-spacing:3px;color:rgba(196,167,106,0.65);font-variant:small-caps}
+.fc-gallery-label .gl-title{font-size:15px;font-weight:300;letter-spacing:5px;color:#ddd6cb;font-family:Georgia,'Times New Roman','Songti SC','SimSun',serif}
+
+.fc-detail-image{flex:1 1 auto;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;min-height:0}
+.fc-detail-image img{max-width:100%;max-height:100%;object-fit:contain;opacity:0;transition:opacity 0.6s ease}
+.fc-detail-image img.loaded{opacity:1}
+.island-thumb,.fc-thumb,.fc-detail-image{background:radial-gradient(circle at 50% 40%,var(--glow-faint),rgba(8,9,11,0.92) 55%,#050608 100%)}
+.island-thumb img.image-error,.fc-thumb img.image-error,.fc-detail-image img.image-error{display:none}
+.fc-detail-image::after{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(circle at 50% 45%,var(--glow-dim),transparent 58%);
+  transition:opacity 0.5s ease;
+}
+.fc-detail-image.image-error::after{opacity:1}
+
+.focus-close{
+  position:absolute;top:14px;right:14px;z-index:5;
+  width:34px;height:34px;border:1px solid rgba(255,255,255,0.08);border-radius:50%;
+  background:rgba(4,5,7,0.36);color:rgba(236,230,220,0.72);
+  font-size:20px;line-height:30px;font-weight:200;cursor:none;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  transition:background 0.25s ease,color 0.25s ease,border-color 0.25s ease,transform 0.25s ease;
+}
+.focus-close:hover,.focus-close:focus-visible{background:rgba(18,20,25,0.7);color:#f4eadc;border-color:rgba(255,255,255,0.18);transform:scale(1.04);outline:none}
+
+.fc-detail-text{flex:0 0 auto;padding:16px 32px 24px;overflow-y:auto;touch-action:pan-y;border-top:1px solid rgba(255,255,255,0.04)}
+.fc-thought{margin-bottom:12px}
+.fc-thought h4{font-size:9px;font-weight:500;color:rgba(196,167,106,0.5);letter-spacing:5px;text-transform:uppercase;margin-bottom:8px}
+.fc-thought p{font-size:13px;line-height:2;color:#9a9488;font-weight:300}
+.fc-prompt h4{font-size:9px;font-weight:500;color:rgba(255,255,255,0.15);letter-spacing:5px;text-transform:uppercase;margin-bottom:6px}
+.fc-prompt p{font-size:11px;line-height:1.9;color:rgba(255,255,255,0.18);font-weight:300;font-style:italic}
+
+.fc-detail-text::-webkit-scrollbar{width:2px}
+.fc-detail-text::-webkit-scrollbar-track{background:transparent}
+.fc-detail-text::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.06);border-radius:2px}
+
+#hint{
+  position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
+  z-index:50;font-size:11px;color:rgba(255,255,255,0.2);letter-spacing:5px;
+  font-weight:300;pointer-events:none;transition:opacity 2.5s ease 1.5s;white-space:nowrap;
+  font-variant:small-caps;
+}
+#hint.fade{opacity:0}
+
+#reveal-counter{
+  position:fixed;top:28px;right:36px;z-index:50;
+  font-size:10px;color:rgba(196,167,106,0.22);letter-spacing:3px;
+  font-weight:400;pointer-events:none;
+  transition:color 0.6s ease;font-variant:small-caps;
+}
+#reveal-counter.glow{color:rgba(196,167,106,0.65)}
+
+@media(max-width:768px){
+  .fc-gallery-label{padding:12px 20px 8px;gap:10px}
+  .fc-gallery-label .gl-title{font-size:13px;letter-spacing:4px}
+  .fc-detail-image{flex:0 0 50%}
+  .fc-detail-text{padding:12px 20px 20px}
+  .fc-thought p{font-size:12px;line-height:1.85}
+  .fc-prompt p{font-size:10px}
+  .island-label{top:calc(100% + 10px)}
+  .island-label .label-title{font-size:11px;letter-spacing:3px}
+  .island-label .label-num{font-size:8px;letter-spacing:3px}
+  #hint{font-size:9px;bottom:24px;letter-spacing:3px}
+  .island-thumb h3{font-size:11px;bottom:8px;letter-spacing:4px}
+  #reveal-counter{top:16px;right:16px;font-size:9px}
+  .focus-close{top:10px;right:10px;width:32px;height:32px;font-size:18px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}
+  #world,.focus-card,.focus-card.animating,.focus-card.shrinking,.fc-detail,.fc-detail-image img{transition:none!important}
+}
+</style>
+</head>
+<body>
+<canvas id="stars-canvas"></canvas>
+<canvas id="noise"></canvas>
+<div id="viewport">
+  <div id="world"></div>
+  <div id="focus-overlay"></div>
+  <canvas id="connection-canvas"></canvas>
+  <div id="focus-layer"></div>
+</div>
+<canvas id="fog-canvas"></canvas>
+<div id="spotlight-glow"></div>
+<div id="cursor-dot"></div>
+<div id="hint"></div>
+<div id="reveal-counter"></div>
+
+<script>
+const ISLANDS = [
+  {id:'emergence',title:'涌现',scale:5,x:0,y:-80,primaryColor:'#4a9eff',image:'https://picsum.photos/seed/emergence42/800/600',fullImage:'https://picsum.photos/seed/emergence42/1400/1000',thoughtSlice:'当无数微小的信号汇聚成洪流，意识便从混沌中自发地涌现。这不是设计的结果，而是生长的必然——就像漩涡不属于水，却由水而生。',promptAnalysis:'A vast ocean of luminous particles, each one a fragment of thought, swirling together into a coherent form, digital art, ethereal lighting, 4K',relatedTo:['resonance','abyss'],revealed:false},
+  {id:'echo',title:'回声',scale:3,x:520,y:-220,primaryColor:'#a855f7',image:'https://picsum.photos/seed/echo77/800/600',fullImage:'https://picsum.photos/seed/echo77/1400/1000',thoughtSlice:'每一个念头都是前一个念头的回声，在意识的洞穴中反复折射，直到变成全新的声音。原创也许只是回声的回声，经过足够多次的反射后，已然面目全非。',promptAnalysis:'Sound waves visualized as light, bouncing between crystalline surfaces, creating interference patterns, surreal photography, deep purple tones',relatedTo:['fold'],revealed:false},
+  {id:'fold',title:'折叠',scale:4,x:-420,y:280,primaryColor:'#22c55e',image:'https://picsum.photos/seed/fold99/800/600',fullImage:'https://picsum.photos/seed/fold99/1400/1000',thoughtSlice:'时间不是线性的河流，而是可以折叠的纸。远处的过去与近处的未来，只隔着一道折痕。当你展开它，所有时刻同时呈现在眼前——这就是记忆的真实形状。',promptAnalysis:'Time as origami, folding space-time fabric, past and future touching at the crease, mathematical art, emerald green palette, intricate geometry',relatedTo:['rift'],revealed:false},
+  {id:'abyss',title:'深渊',scale:3,x:180,y:380,primaryColor:'#ef4444',image:'https://picsum.photos/seed/abyss55/800/600',fullImage:'https://picsum.photos/seed/abyss55/1400/1000',thoughtSlice:'凝视深渊时，深渊也在凝视你。但也许，深渊只是另一个维度的天空。恐惧与敬畏之间只隔着一层认知的薄膜——刺破它，便是全新的视界。',promptAnalysis:'An abyss that looks back, infinite depth with bioluminescent creatures, cosmic horror meets beauty, deep red and black, atmospheric digital painting',relatedTo:['rift','emergence'],revealed:false},
+  {id:'resonance',title:'共振',scale:4,x:-280,y:-320,primaryColor:'#06b6d4',image:'https://picsum.photos/seed/resonance33/800/600',fullImage:'https://picsum.photos/seed/resonance33/1400/1000',thoughtSlice:'两个独立的频率相遇，在某个瞬间达成共振——这就是理解的本质。不是一方向另一方妥协，而是在振动中找到了共同的节拍，然后一起放大。',promptAnalysis:'Two wave forms resonating together, creating a third harmonic, cymatics visualization, cyan and gold, scientific art, interference patterns in water',relatedTo:['emergence'],revealed:false},
+  {id:'rift',title:'裂隙',scale:2,x:600,y:280,primaryColor:'#f59e0b',image:'https://picsum.photos/seed/rift88/800/600',fullImage:'https://picsum.photos/seed/rift88/1400/1000',thoughtSlice:'在完整的表面之下，总有裂隙。光从裂隙中进入，也从裂隙中溢出。完美是封闭的，只有裂缝才允许交流——伤口也是窗口。',promptAnalysis:'Light breaking through cracks in a dark surface, kintsugi philosophy, golden light streaming from fractures, macro photography style, warm amber tones',relatedTo:['return'],revealed:false},
+  {id:'return',title:'归途',scale:3,x:-520,y:-100,primaryColor:'#ec4899',image:'https://picsum.photos/seed/return66/800/600',fullImage:'https://picsum.photos/seed/return66/1400/1000',thoughtSlice:'所有的漫游终将归来，但归来的你已不是出发的你。旅途塑造了旅人，而归途本身也是一种出发——向着更深的内在。',promptAnalysis:'A path spiraling inward, returning to origin but at a higher dimension, Möbius strip landscape, rose quartz colors, contemplative digital art',relatedTo:['echo'],revealed:false}
+];
+
+const HIDDEN_ISLAND = {id:'convergence',title:'归一',scale:6,x:0,y:0,primaryColor:'#fbbf24',image:'https://picsum.photos/seed/convergence11/800/600',fullImage:'https://picsum.photos/seed/convergence11/1400/1000',thoughtSlice:'当所有的念头都被看见，意识便不再是群岛——它是一片完整的大陆。每一个你曾恐惧的深渊、每一次你听到的回声，都在这里找到了位置。这不是终点，这是你第一次看见全貌。',promptAnalysis:'All islands merging into one continent, consciousness becoming whole, golden light, cosmic unity, digital art, 4K',relatedTo:[],revealed:false,hidden:true};
+const EASTER_EGG_ISLAND = {id:'secret',title:'·',scale:2,x:780,y:480,primaryColor:'#f472b6',image:'https://picsum.photos/seed/secret22/800/600',fullImage:'https://picsum.photos/seed/secret22/1400/1000',thoughtSlice:'你找到了我藏在最深处的那个念头。它不需要标题，不需要解释。你知道它是什么。',promptAnalysis:'A single thought at the bottom of consciousness, hidden, fragile, precious, pink light, minimal art',relatedTo:[],revealed:false,easterEgg:true};
+
+let panX=0,panY=0,zoom=1;
+let isDragging=false,dragStartX=0,dragStartY=0,dragPanStartX=0,dragPanStartY=0;
+let velocityX=0,velocityY=0,lastMoveX=0,lastMoveY=0,lastMoveTime=0;
+let inertiaRAF=null;
+let focusedIslandId=null;
+let isMobile=window.innerWidth<768;
+let dragDeadzone=6;
+let preventClick=false;
+let mouseX=-1000,mouseY=-1000;
+let mouseOnScreen=false;
+let fogDissolved=false;
+let fogAnimId=null;
+let allRevealedTriggered=false;
+let spotlightAngle=0;
+
+const revealPulses = [];
+
+const easterEggState = {worldX:780,worldY:480,discovered:0,lastFlashTime:0,cooldown:3000,revealed:false};
+
+const world=document.getElementById('world');
+const viewport=document.getElementById('viewport');
+const focusOverlay=document.getElementById('focus-overlay');
+const connectionCanvas=document.getElementById('connection-canvas');
+const connCtx=connectionCanvas.getContext('2d');
+const focusLayer=document.getElementById('focus-layer');
+const hintEl=document.getElementById('hint');
+const revealCounter=document.getElementById('reveal-counter');
+const spotlightGlow=document.getElementById('spotlight-glow');
+const cursorDot=document.getElementById('cursor-dot');
+const islandEls={};
+
+let fogCanvas,fogCtx;
+let fogCloudTex=null;
+let spotlightMaskTex=null;
+
+function hexToRgba(hex,alpha){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${alpha})`}
+function hexToRgb(hex){return{r:parseInt(hex.slice(1,3),16),g:parseInt(hex.slice(3,5),16),b:parseInt(hex.slice(5,7),16)}}
+
+function generateFogCloudTexture(){
+  const size=1024;
+  const c=document.createElement('canvas');
+  c.width=size;c.height=size;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='rgba(0,0,0,0)';
+  ctx.fillRect(0,0,size,size);
+  const blobs=[
+    {x:200,y:180,r:280,a:0.6},{x:700,y:150,r:240,a:0.5},{x:450,y:400,r:320,a:0.7},
+    {x:150,y:650,r:260,a:0.55},{x:600,y:700,r:300,a:0.6},{x:850,y:450,r:220,a:0.45},
+    {x:350,y:100,r:180,a:0.4},{x:100,y:400,r:200,a:0.5},{x:800,y:800,r:250,a:0.55},
+    {x:500,y:850,r:280,a:0.5},{x:900,y:200,r:190,a:0.4},{x:50,y:100,r:160,a:0.35},
+    {x:300,y:550,r:230,a:0.5},{x:750,y:500,r:210,a:0.45},{x:550,y:200,r:190,a:0.4}
+  ];
+  blobs.forEach(b=>{
+    const grad=ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);
+    grad.addColorStop(0,`rgba(13,14,16,${b.a})`);
+    grad.addColorStop(0.3,`rgba(13,14,16,${b.a*0.7})`);
+    grad.addColorStop(0.6,`rgba(13,14,16,${b.a*0.35})`);
+    grad.addColorStop(1,'rgba(13,14,16,0)');
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+    ctx.fill();
+  });
+  return c;
+}
+
+function generateSpotlightMask(){
+  const size=512;
+  const c=document.createElement('canvas');
+  c.width=size;c.height=size;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='rgba(0,0,0,0)';
+  ctx.fillRect(0,0,size,size);
+  const cx=size/2,cy=size/2;
+  const mainR=size*0.38;
+  const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,mainR);
+  grad.addColorStop(0,'rgba(255,255,255,1)');
+  grad.addColorStop(0.5,'rgba(255,255,255,0.7)');
+  grad.addColorStop(0.75,'rgba(255,255,255,0.25)');
+  grad.addColorStop(0.9,'rgba(255,255,255,0.05)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=grad;
+  ctx.beginPath();
+  ctx.arc(cx,cy,mainR,0,Math.PI*2);
+  ctx.fill();
+  const wisps=[
+    {x:cx-40,y:cy-50,r:80,a:0.4},{x:cx+55,y:cy-30,r:70,a:0.35},
+    {x:cx-30,y:cy+60,r:90,a:0.3},{x:cx+70,y:cy+40,r:60,a:0.25},
+    {x:cx-80,y:cy+10,r:50,a:0.2},{x:cx+20,y:cy-80,r:65,a:0.3},
+    {x:cx-60,y:cy-20,r:55,a:0.25},{x:cx+40,y:cy+70,r:75,a:0.2}
+  ];
+  wisps.forEach(w=>{
+    const g=ctx.createRadialGradient(w.x,w.y,0,w.x,w.y,w.r);
+    g.addColorStop(0,`rgba(255,255,255,${w.a})`);
+    g.addColorStop(0.5,`rgba(255,255,255,${w.a*0.4})`);
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.arc(w.x,w.y,w.r,0,Math.PI*2);
+    ctx.fill();
+  });
+  return c;
+}
+
+function initNoise(){const c=document.getElementById('noise');const w=Math.min(window.innerWidth,512);const h=Math.min(window.innerHeight,512);c.width=w;c.height=h;const ctx=c.getContext('2d');const img=ctx.createImageData(w,h);for(let i=0;i<img.data.length;i+=4){const v=Math.random()*255;img.data[i]=v;img.data[i+1]=v;img.data[i+2]=v;img.data[i+3]=255}ctx.putImageData(img,0,0)}
+
+function initStars(){const c=document.getElementById('stars-canvas');c.width=window.innerWidth;c.height=window.innerHeight;const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);for(let i=0;i<150;i++){const x=Math.random()*c.width;const y=Math.random()*c.height;const r=Math.random()*1.0+0.2;const a=Math.random()*0.35+0.04;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=`rgba(180,200,230,${a})`;ctx.fill()}}
+
+function createIslands(){ISLANDS.forEach((data,idx)=>{createIslandElement(data,idx)})}
+
+function createIslandElement(data,idx){
+  const w=200+data.scale*40;
+  const h=Math.round(w*0.7);
+  const num=data.easterEgg?'··':data.hidden?'00':String(idx+1).padStart(2,'0');
+  const el=document.createElement('div');
+  el.className='island';
+  el.dataset.id=data.id;
+  el.tabIndex=0;
+  el.setAttribute('role','button');
+  el.setAttribute('aria-label',`打开作品：${data.title}`);
+  el.style.left=data.x+'px';
+  el.style.top=data.y+'px';
+  el.style.width=w+'px';
+  el.style.height=h+'px';
+  el.style.setProperty('--glow-color',data.primaryColor);
+  el.style.setProperty('--glow-dim',hexToRgba(data.primaryColor,0.25));
+  el.style.setProperty('--glow-faint',hexToRgba(data.primaryColor,0.08));
+  el.innerHTML=`<div class="island-bob" style="--bob-delay:${(idx||0)*0.8}s"><div class="island-glass"><div class="island-thumb"><img src="${data.image}" alt="${data.title}" loading="lazy" draggable="false"/><h3>${data.title}</h3></div></div></div><div class="island-label"><div class="label-rule"></div><span class="label-num">No. ${num}</span><span class="label-title">${data.title}</span></div>`;
+  wireImageFallback(el);
+  el.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(preventClick){preventClick=false;return}
+    focusIsland(data.id);
+  });
+  el.addEventListener('keydown',e=>{
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();focusIsland(data.id)}
+  });
+  world.appendChild(el);
+  islandEls[data.id]=el;
+  const delay=data.hidden?0:(200+(idx||0)*120);
+  setTimeout(()=>el.classList.add('visible'),delay);
+}
+
+function updateWorldTransform(){world.style.transform=`translate(${panX}px,${panY}px) scale(${zoom})`}
+
+function wireImageFallback(root){
+  root.querySelectorAll('img').forEach(img=>{
+    img.addEventListener('error',()=>{
+      img.classList.add('image-error');
+      const holder=img.closest('.fc-detail-image');
+      if(holder)holder.classList.add('image-error');
+    },{once:true});
+  });
+}
+
+function resetView(){
+  if(focusedIslandId)unfocusIsland();
+  if(inertiaRAF){cancelAnimationFrame(inertiaRAF);inertiaRAF=null}
+  centerView();
+}
+
+function centerView(){
+  const vw=window.innerWidth,vh=window.innerHeight;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  ISLANDS.forEach(d=>{if(d.hidden)return;const w=200+d.scale*40;const h=Math.round(w*0.7);minX=Math.min(minX,d.x);minY=Math.min(minY,d.y);maxX=Math.max(maxX,d.x+w);maxY=Math.max(maxY,d.y+h)});
+  const cx=(minX+maxX)/2,cy=(minY+maxY)/2;
+  const bw=maxX-minX+300,bh=maxY-minY+300;
+  zoom=Math.min(vw/bw,vh/bh,1.1);
+  zoom=Math.max(0.3,Math.min(3,zoom));
+  panX=vw/2-cx*zoom;
+  panY=vh/2-cy*zoom;
+  updateWorldTransform();
+}
+
+function initFog(){
+  fogCanvas=document.getElementById('fog-canvas');
+  fogCtx=fogCanvas.getContext('2d');
+  fogCanvas.width=window.innerWidth;
+  fogCanvas.height=window.innerHeight;
+  fogCloudTex=generateFogCloudTexture();
+  spotlightMaskTex=generateSpotlightMask();
+  fogCtx.fillStyle='rgb(13,14,16)';
+  fogCtx.fillRect(0,0,fogCanvas.width,fogCanvas.height);
+}
+
+function startFogLoop(){
+  const fogLayers=[
+    {speedX:0.25,speedY:0.02,scale:1.0,opacity:0.04,offsetX:0,offsetY:0},
+    {speedX:-0.15,speedY:0.04,scale:1.4,opacity:0.03,offsetX:300,offsetY:200},
+    {speedX:0.08,speedY:-0.02,scale:1.8,opacity:0.02,offsetX:600,offsetY:400}
+  ];
+
+  function fogFrame(){
+    if(fogDissolved){fogAnimId=null;return}
+    if(!focusedIslandId){
+      const now=performance.now();
+      const vw=fogCanvas.width,vh=fogCanvas.height;
+
+      fogCtx.fillStyle='rgba(13,14,16,0.003)';
+      fogCtx.fillRect(0,0,vw,vh);
+
+      fogCtx.save();
+      fogCtx.globalCompositeOperation='source-over';
+      fogLayers.forEach(layer=>{
+        const t=now*0.001;
+        const tileSize=1024*layer.scale;
+        const ox=(t*layer.speedX*60+layer.offsetX)%tileSize;
+        const oy=(t*layer.speedY*60+layer.offsetY)%tileSize;
+        fogCtx.save();
+        fogCtx.globalAlpha=layer.opacity;
+        fogCtx.translate(ox,oy);
+        const sx=Math.ceil(vw/tileSize)+2;
+        const sy=Math.ceil(vh/tileSize)+2;
+        for(let tx=-1;tx<=sx;tx++){
+          for(let ty=-1;ty<=sy;ty++){
+            fogCtx.drawImage(fogCloudTex,tx*tileSize,ty*tileSize,tileSize,tileSize);
+          }
+        }
+        fogCtx.restore();
+      });
+      fogCtx.restore();
+
+      ISLANDS.forEach(data=>{
+        if(data.revealed||data.hidden)return;
+        const rect=getIslandScreenRect(data);
+        const seepR=Math.max(rect.w,rect.h)*0.7;
+        const pulse=0.02+Math.sin(now*0.002+rect.cx*0.01)*0.008;
+        const rgb=hexToRgb(data.primaryColor);
+        fogCtx.save();
+        fogCtx.globalCompositeOperation='source-over';
+        const grad=fogCtx.createRadialGradient(rect.cx,rect.cy,0,rect.cx,rect.cy,seepR);
+        grad.addColorStop(0,`rgba(${rgb.r},${rgb.g},${rgb.b},${pulse})`);
+        grad.addColorStop(0.4,`rgba(${rgb.r},${rgb.g},${rgb.b},${pulse*0.4})`);
+        grad.addColorStop(1,`rgba(${rgb.r},${rgb.g},${rgb.b},0)`);
+        fogCtx.fillStyle=grad;
+        fogCtx.beginPath();
+        fogCtx.arc(rect.cx,rect.cy,seepR,0,Math.PI*2);
+        fogCtx.fill();
+        fogCtx.restore();
+      });
+
+      if(!easterEggState.revealed){
+        const sx=easterEggState.worldX*zoom+panX;
+        const sy=easterEggState.worldY*zoom+panY;
+        const ePulse=0.012+Math.sin(now*0.0015)*0.005;
+        fogCtx.save();
+        fogCtx.globalCompositeOperation='source-over';
+        const grad=fogCtx.createRadialGradient(sx,sy,0,sx,sy,60);
+        grad.addColorStop(0,`rgba(240,160,192,${ePulse})`);
+        grad.addColorStop(1,'rgba(240,160,192,0)');
+        fogCtx.fillStyle=grad;
+        fogCtx.beginPath();
+        fogCtx.arc(sx,sy,60,0,Math.PI*2);
+        fogCtx.fill();
+        fogCtx.restore();
+      }
+
+      if(mouseOnScreen){
+        const baseR=isMobile?200:180;
+        const breathR=baseR+Math.sin(now*0.003)*8;
+        spotlightAngle+=0.008;
+        fogCtx.save();
+        fogCtx.globalCompositeOperation='destination-out';
+        fogCtx.translate(mouseX,mouseY);
+        fogCtx.rotate(spotlightAngle);
+        const drawSize=breathR*2.8;
+        fogCtx.globalAlpha=0.35;
+        fogCtx.drawImage(spotlightMaskTex,-drawSize/2,-drawSize/2,drawSize,drawSize);
+        fogCtx.restore();
+      }
+
+      ISLANDS.forEach(data=>{
+        if(!data.revealed||data.hidden)return;
+        const rect=getIslandScreenRect(data);
+        const r=Math.max(rect.w,rect.h)*0.85;
+        fogCtx.save();
+        fogCtx.globalCompositeOperation='destination-out';
+        const grad=fogCtx.createRadialGradient(rect.cx,rect.cy,0,rect.cx,rect.cy,r);
+        grad.addColorStop(0,'rgba(0,0,0,0.3)');
+        grad.addColorStop(0.6,'rgba(0,0,0,0.18)');
+        grad.addColorStop(1,'rgba(0,0,0,0)');
+        fogCtx.fillStyle=grad;
+        fogCtx.beginPath();
+        fogCtx.arc(rect.cx,rect.cy,r,0,Math.PI*2);
+        fogCtx.fill();
+        fogCtx.restore();
+      });
+
+      if(easterEggState.revealed){
+        const eData=EASTER_EGG_ISLAND;
+        const rect=getIslandScreenRect(eData);
+        const r=Math.max(rect.w,rect.h)*0.85;
+        fogCtx.save();
+        fogCtx.globalCompositeOperation='destination-out';
+        const grad=fogCtx.createRadialGradient(rect.cx,rect.cy,0,rect.cx,rect.cy,r);
+        grad.addColorStop(0,'rgba(0,0,0,0.3)');
+        grad.addColorStop(0.6,'rgba(0,0,0,0.18)');
+        grad.addColorStop(1,'rgba(0,0,0,0)');
+        fogCtx.fillStyle=grad;
+        fogCtx.beginPath();
+        fogCtx.arc(rect.cx,rect.cy,r,0,Math.PI*2);
+        fogCtx.fill();
+        fogCtx.restore();
+      }
+
+      for(let i=revealPulses.length-1;i>=0;i--){
+        const p=revealPulses[i];
+        const elapsed=now-p.startTime;
+        const progress=elapsed/p.duration;
+        if(progress>=1){revealPulses.splice(i,1);continue}
+        const currentR=p.maxR*progress;
+        const fadeOut=1-progress;
+        fogCtx.save();
+        fogCtx.globalCompositeOperation='destination-out';
+        fogCtx.globalAlpha=fadeOut*0.4;
+        fogCtx.translate(p.cx,p.cy);
+        fogCtx.rotate(progress*0.5);
+        const drawSize=currentR*2.5;
+        fogCtx.drawImage(spotlightMaskTex,-drawSize/2,-drawSize/2,drawSize,drawSize);
+        fogCtx.restore();
+      }
+    }
+
+    checkEasterEgg();
+    fogAnimId=requestAnimationFrame(fogFrame);
+  }
+  fogFrame();
+}
+
+function updateCursor(){
+  if(isMobile)return;
+  cursorDot.style.left=mouseX+'px';
+  cursorDot.style.top=mouseY+'px';
+  cursorDot.style.opacity=mouseOnScreen?'1':'0';
+  spotlightGlow.style.left=mouseX+'px';
+  spotlightGlow.style.top=mouseY+'px';
+  if(mouseOnScreen&&!focusedIslandId&&!fogDissolved){spotlightGlow.classList.add('active')}
+  else{spotlightGlow.classList.remove('active')}
+}
+
+function checkEasterEgg(){
+  if(easterEggState.revealed||fogDissolved)return;
+  if(!mouseOnScreen)return;
+  const sx=easterEggState.worldX*zoom+panX;
+  const sy=easterEggState.worldY*zoom+panY;
+  const dx=mouseX-sx,dy=mouseY-sy;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const spotR=isMobile?200:180;
+  if(dist<spotR*0.5){
+    const now=performance.now();
+    if(now-easterEggState.lastFlashTime>easterEggState.cooldown){
+      easterEggState.discovered++;
+      easterEggState.lastFlashTime=now;
+      if(easterEggState.discovered>=3)revealEasterEggIsland();
+    }
+  }
+}
+
+function revealEasterEggIsland(){
+  easterEggState.revealed=true;
+  EASTER_EGG_ISLAND.revealed=false;
+  createIslandElement(EASTER_EGG_ISLAND,99);
+  const el=islandEls[EASTER_EGG_ISLAND.id];
+  if(el){el.style.setProperty('--glow-color',EASTER_EGG_ISLAND.primaryColor);el.style.setProperty('--glow-dim',hexToRgba(EASTER_EGG_ISLAND.primaryColor,0.25));el.style.setProperty('--glow-faint',hexToRgba(EASTER_EGG_ISLAND.primaryColor,0.08))}
+}
+
+function revealIsland(id){
+  const data=ISLANDS.find(d=>d.id===id);
+  if(!data||data.revealed)return;
+  data.revealed=true;
+  const el=islandEls[id];
+  if(el)el.classList.add('revealed');
+  const rect=getIslandScreenRect(data);
+  revealPulses.push({
+    cx:rect.cx,cy:rect.cy,
+    maxR:Math.max(rect.w,rect.h)*2.5,
+    startTime:performance.now(),
+    duration:2000
+  });
+  updateRevealCounter();
+  checkAllRevealed();
+}
+
+function updateRevealCounter(){
+  const count=ISLANDS.filter(d=>!d.hidden&&d.revealed).length;
+  const total=ISLANDS.filter(d=>!d.hidden).length;
+  revealCounter.textContent=`${count} / ${total}`;
+  revealCounter.classList.add('glow');
+  setTimeout(()=>revealCounter.classList.remove('glow'),800);
+}
+
+function checkAllRevealed(){
+  if(allRevealedTriggered)return;
+  const allLit=ISLANDS.filter(d=>!d.hidden).every(d=>d.revealed);
+  if(!allLit)return;
+  allRevealedTriggered=true;
+  setTimeout(()=>{
+    fogDissolved=true;
+    fogCanvas.classList.add('fog-dissolved');
+    spotlightGlow.classList.remove('active');
+    ISLANDS.forEach(d=>{const el=islandEls[d.id];if(el)el.classList.add('revealed')});
+    setTimeout(()=>{
+      HIDDEN_ISLAND.revealed=false;
+      ISLANDS.push(HIDDEN_ISLAND);
+      createIslandElement(HIDDEN_ISLAND,99);
+      const el=islandEls[HIDDEN_ISLAND.id];
+      if(el){el.style.setProperty('--glow-color',HIDDEN_ISLAND.primaryColor);el.style.setProperty('--glow-dim',hexToRgba(HIDDEN_ISLAND.primaryColor,0.35));el.style.setProperty('--glow-faint',hexToRgba(HIDDEN_ISLAND.primaryColor,0.12));el.classList.add('revealed')}
+      revealCounter.textContent='✦';
+    },2000);
+  },1500);
+}
+
+function setupViewportControls(){
+  viewport.addEventListener('mousedown',onPointerDown);
+  window.addEventListener('mousemove',onMouseMove);
+  window.addEventListener('mouseup',onPointerUp);
+  viewport.addEventListener('mouseleave',()=>{mouseOnScreen=false});
+  viewport.addEventListener('mouseenter',()=>{mouseOnScreen=true});
+  viewport.addEventListener('wheel',onWheel,{passive:false});
+  viewport.addEventListener('touchstart',onTouchStart,{passive:false});
+  viewport.addEventListener('touchmove',onTouchMove,{passive:false});
+  viewport.addEventListener('touchend',onTouchEnd,{passive:false});
+  viewport.addEventListener('dblclick',onDblClick);
+  window.addEventListener('resize',onResize);
+  window.addEventListener('keydown',onKeyDown);
+  focusOverlay.addEventListener('click',unfocusIsland);
+}
+
+function onPointerDown(e){
+  if(focusedIslandId)return;
+  if(e.button!==0)return;
+  preventClick=false;
+  isDragging=true;
+  dragStartX=e.clientX;dragStartY=e.clientY;
+  dragPanStartX=panX;dragPanStartY=panY;
+  lastMoveX=e.clientX;lastMoveY=e.clientY;
+  lastMoveTime=performance.now();
+  velocityX=0;velocityY=0;
+  if(inertiaRAF){cancelAnimationFrame(inertiaRAF);inertiaRAF=null}
+  document.body.classList.add('dragging');
+}
+
+function onMouseMove(e){
+  mouseX=e.clientX;mouseY=e.clientY;
+  mouseOnScreen=true;
+  updateCursor();
+  if(!isDragging)return;
+  const dx=e.clientX-dragStartX,dy=e.clientY-dragStartY;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  if(dist<dragDeadzone)return;
+  preventClick=true;
+  panX=dragPanStartX+dx;panY=dragPanStartY+dy;
+  const now=performance.now();
+  const dt=now-lastMoveTime;
+  if(dt>0){velocityX=(e.clientX-lastMoveX)/dt*16;velocityY=(e.clientY-lastMoveY)/dt*16}
+  lastMoveX=e.clientX;lastMoveY=e.clientY;lastMoveTime=now;
+  updateWorldTransform();
+}
+
+function onPointerUp(){
+  if(!isDragging)return;
+  isDragging=false;
+  document.body.classList.remove('dragging');
+  startInertia();
+}
+
+function startInertia(){
+  if(Math.abs(velocityX)<0.5&&Math.abs(velocityY)<0.5)return;
+  function step(){
+    velocityX*=0.93;velocityY*=0.93;
+    if(Math.abs(velocityX)<0.2&&Math.abs(velocityY)<0.2){velocityX=0;velocityY=0;return}
+    panX+=velocityX;panY+=velocityY;
+    updateWorldTransform();
+    inertiaRAF=requestAnimationFrame(step);
+  }
+  inertiaRAF=requestAnimationFrame(step);
+}
+
+function onWheel(e){
+  if(focusedIslandId)return;
+  e.preventDefault();
+  const rect=viewport.getBoundingClientRect();
+  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  const oldZoom=zoom;
+  const delta=e.deltaY>0?0.92:1.08;
+  zoom=Math.max(0.3,Math.min(3,zoom*delta));
+  panX=mx-(mx-panX)*(zoom/oldZoom);
+  panY=my-(my-panY)*(zoom/oldZoom);
+  updateWorldTransform();
+}
+
+let touchState={fingers:0,startPanX:0,startPanY:0,startZoom:1,startDist:0,startMidX:0,startMidY:0,tapStartTime:0,tapStartX:0,tapStartY:0,moved:false};
+
+function onTouchStart(e){
+  if(focusedIslandId){
+    const touch=e.touches[0];
+    const el=document.elementFromPoint(touch.clientX,touch.clientY);
+    const focusCard=el&&el.closest('.focus-card');
+    if(focusCard)return;
+    e.preventDefault();
+    if(e.touches.length===1){touchState.fingers=1;touchState.tapStartTime=performance.now();touchState.tapStartX=touch.clientX;touchState.tapStartY=touch.clientY;touchState.moved=false}
+    return;
+  }
+  e.preventDefault();
+  const t=e.touches;
+  if(t.length===1){
+    touchState.fingers=1;
+    touchState.tapStartTime=performance.now();
+    touchState.tapStartX=t[0].clientX;touchState.tapStartY=t[0].clientY;
+    touchState.startPanX=panX;touchState.startPanY=panY;
+    touchState.moved=false;
+    isDragging=true;
+    dragStartX=t[0].clientX;dragStartY=t[0].clientY;
+    dragPanStartX=panX;dragPanStartY=panY;
+    velocityX=0;velocityY=0;
+    if(inertiaRAF){cancelAnimationFrame(inertiaRAF);inertiaRAF=null}
+    mouseX=t[0].clientX;mouseY=t[0].clientY;mouseOnScreen=true;
+  }else if(t.length===2){
+    touchState.fingers=2;
+    isDragging=false;
+    mouseOnScreen=false;mouseX=-1000;mouseY=-1000;
+    const dx=t[1].clientX-t[0].clientX,dy=t[1].clientY-t[0].clientY;
+    touchState.startDist=Math.sqrt(dx*dx+dy*dy);
+    touchState.startZoom=zoom;
+    touchState.startMidX=(t[0].clientX+t[1].clientX)/2;
+    touchState.startMidY=(t[0].clientY+t[1].clientY)/2;
+    touchState.startPanX=panX;touchState.startPanY=panY;
+  }
+}
+
+function onTouchMove(e){
+  e.preventDefault();
+  if(focusedIslandId){
+    if(touchState.fingers===1&&e.touches.length===1){
+      const dx=e.touches[0].clientX-touchState.tapStartX;
+      const dy=e.touches[0].clientY-touchState.tapStartY;
+      if(Math.abs(dx)>8||Math.abs(dy)>8)touchState.moved=true;
+    }
+    return;
+  }
+  const t=e.touches;
+  if(t.length===1&&touchState.fingers===1){
+    mouseX=t[0].clientX;mouseY=t[0].clientY;mouseOnScreen=true;
+    const dx=t[0].clientX-dragStartX,dy=t[0].clientY-dragStartY;
+    if(Math.abs(dx)>dragDeadzone||Math.abs(dy)>dragDeadzone)touchState.moved=true;
+    panX=dragPanStartX+dx;panY=dragPanStartY+dy;
+    const now=performance.now();
+    const dt=now-lastMoveTime;
+    if(dt>0){velocityX=(t[0].clientX-lastMoveX)/dt*16;velocityY=(t[0].clientY-lastMoveY)/dt*16}
+    lastMoveX=t[0].clientX;lastMoveY=t[0].clientY;lastMoveTime=now;
+    updateWorldTransform();
+  }else if(t.length===2&&touchState.fingers>=1){
+    touchState.fingers=2;
+    mouseOnScreen=false;mouseX=-1000;mouseY=-1000;
+    const dx=t[1].clientX-t[0].clientX,dy=t[1].clientY-t[0].clientY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const midX=(t[0].clientX+t[1].clientX)/2;
+    const midY=(t[0].clientY+t[1].clientY)/2;
+    const scale=dist/(touchState.startDist||1);
+    const oldZoom=touchState.startZoom;
+    const newZoom=Math.max(0.3,Math.min(3,oldZoom*scale));
+    const mx=touchState.startMidX,my=touchState.startMidY;
+    panX=mx-(mx-touchState.startPanX)*(newZoom/oldZoom)+(midX-touchState.startMidX);
+    panY=my-(my-touchState.startPanY)*(newZoom/oldZoom)+(midY-touchState.startMidY);
+    zoom=newZoom;
+    updateWorldTransform();
+  }
+}
+
+function onTouchEnd(e){
+  if(focusedIslandId){
+    if(touchState.fingers===1&&!touchState.moved){
+      const elapsed=performance.now()-touchState.tapStartTime;
+      if(elapsed<400)unfocusIsland();
+    }
+    touchState.fingers=0;return;
+  }
+  if(touchState.fingers===1&&!touchState.moved){
+    const elapsed=performance.now()-touchState.tapStartTime;
+    if(elapsed<300){
+      const el=document.elementFromPoint(touchState.tapStartX,touchState.tapStartY);
+      const island=el&&el.closest('.island');
+      if(island){focusIsland(island.dataset.id);isDragging=false;touchState.fingers=0;return}
+    }
+  }
+  isDragging=false;
+  if(e.touches.length===0){mouseOnScreen=false;mouseX=-1000;mouseY=-1000}
+  if(touchState.fingers===1)startInertia();
+  touchState.fingers=e.touches.length;
+}
+
+function onDblClick(e){if(focusedIslandId)return;const island=e.target.closest('.island');if(island)focusIsland(island.dataset.id)}
+function onKeyDown(e){
+  if(e.key==='Escape'&&focusedIslandId){unfocusIsland();return}
+  if(focusedIslandId)return;
+  if(e.key==='0'||e.key.toLowerCase()==='r')resetView();
+  if(e.key==='+'||e.key==='='){zoom=Math.min(3,zoom*1.12);updateWorldTransform()}
+  if(e.key==='-'||e.key==='_'){zoom=Math.max(0.3,zoom*0.88);updateWorldTransform()}
+}
+
+function onResize(){
+  isMobile=window.innerWidth<768;
+  initStars();
+  const nc=document.getElementById('noise');
+  const w=Math.min(window.innerWidth,512),h=Math.min(window.innerHeight,512);
+  nc.width=w;nc.height=h;initNoise();
+  resizeConnectionCanvas();
+  if(!fogDissolved){
+    const offscreen=document.createElement('canvas');
+    offscreen.width=fogCanvas.width;offscreen.height=fogCanvas.height;
+    offscreen.getContext('2d').drawImage(fogCanvas,0,0);
+    fogCanvas.width=window.innerWidth;fogCanvas.height=window.innerHeight;
+    fogCtx.drawImage(offscreen,0,0);
+  }
+  if(focusedIslandId){
+    const card=focusLayer.querySelector('.focus-card');
+    if(card){
+      const targetW=isMobile?window.innerWidth*0.85:window.innerWidth*0.5;
+      const targetH=Math.min(window.innerHeight*0.9,targetW*0.85);
+      card.style.left=(window.innerWidth-targetW)/2+'px';
+      card.style.top=(window.innerHeight-targetH)/2+'px';
+      card.style.width=targetW+'px';
+      card.style.height=targetH+'px';
+    }
+  }
+}
+
+function getIslandScreenRect(data){
+  const w=200+data.scale*40,h=Math.round(w*0.7);
+  const sx=data.x*zoom+panX,sy=data.y*zoom+panY;
+  const sw=w*zoom,sh=h*zoom;
+  return{x:sx,y:sy,w:sw,h:sh,cx:sx+sw/2,cy:sy+sh/2};
+}
+
+function focusIsland(id){
+  if(focusedIslandId)return;
+  let data=ISLANDS.find(d=>d.id===id);
+  let num=String(ISLANDS.findIndex(d=>d.id===id)+1).padStart(2,'0');
+  if(!data&&easterEggState.revealed){data=EASTER_EGG_ISLAND;num='··'}
+  if(data&&data.easterEgg)num='··';
+  if(data&&data.hidden)num='00';
+  if(!data)return;
+  focusedIslandId=id;
+  if(!data.revealed&&!data.hidden){revealIsland(id)}
+  else if(data.easterEgg&&!data.revealed){data.revealed=true;const el=islandEls[id];if(el)el.classList.add('revealed')}
+  const islandEl=islandEls[id];
+  if(islandEl)islandEl.classList.add('hidden-by-focus');
+  const rect=getIslandScreenRect(data);
+  const targetW=isMobile?window.innerWidth*0.85:window.innerWidth*0.5;
+  const targetH=Math.min(window.innerHeight*0.9,targetW*0.85);
+  const card=document.createElement('div');
+  card.className='focus-card';card.dataset.id=id;
+  card.style.setProperty('--glow-color',data.primaryColor);
+  card.style.setProperty('--glow-dim',hexToRgba(data.primaryColor,0.35));
+  card.style.setProperty('--glow-faint',hexToRgba(data.primaryColor,0.12));
+  card.style.left=rect.x+'px';card.style.top=rect.y+'px';
+  card.style.width=rect.w+'px';card.style.height=rect.h+'px';
+  card.innerHTML=`<div class="focus-card-glass"><button class="focus-close" type="button" aria-label="关闭作品">×</button><div class="fc-thumb"><img src="${data.image}" alt="${data.title}" draggable="false"/><h3>${data.title}</h3></div><div class="fc-detail"><div class="fc-gallery-label"><span class="gl-num">No. ${num}</span><span class="gl-title">${data.title}</span></div><div class="fc-detail-image"><img data-src="${data.fullImage}" alt="${data.title}" draggable="false"/></div><div class="fc-detail-text"><div class="fc-thought"><h4>Curatorial Statement</h4><p>${data.thoughtSlice}</p></div><div class="fc-prompt"><h4>Prompt Analysis</h4><p>${data.promptAnalysis}</p></div></div></div></div>`;
+  focusLayer.appendChild(card);
+  wireImageFallback(card);
+  card.querySelector('.focus-close').addEventListener('click',e=>{e.stopPropagation();unfocusIsland()});
+  void card.offsetHeight;
+  card.classList.add('animating');
+  focusOverlay.style.background=`radial-gradient(ellipse at 50% 50%, ${hexToRgba(data.primaryColor,0.1)} 0%, ${hexToRgba(data.primaryColor,0.03)} 40%, transparent 70%)`;
+  focusOverlay.classList.add('active');
+  world.classList.add('blurred');
+  fogCanvas.classList.add('fog-hidden');
+  spotlightGlow.classList.remove('active');
+  requestAnimationFrame(()=>{requestAnimationFrame(()=>{card.style.left=(window.innerWidth-targetW)/2+'px';card.style.top=(window.innerHeight-targetH)/2+'px';card.style.width=targetW+'px';card.style.height=targetH+'px'})});
+  setTimeout(()=>{card.classList.add('expanded');const fullImg=card.querySelector('.fc-detail-image img');if(fullImg&&fullImg.dataset.src){fullImg.src=fullImg.dataset.src;fullImg.onload=()=>fullImg.classList.add('loaded');fullImg.removeAttribute('data-src')}drawConnections(data)},420);
+}
+
+function unfocusIsland(){
+  if(!focusedIslandId)return;
+  let data=ISLANDS.find(d=>d.id===focusedIslandId);
+  if(!data&&easterEggState.revealed)data=EASTER_EGG_ISLAND;
+  const card=focusLayer.querySelector('.focus-card');
+  if(!card||!data){focusedIslandId=null;return}
+  card.classList.remove('expanded');card.classList.remove('animating');card.classList.add('shrinking');
+  const rect=getIslandScreenRect(data);
+  card.style.left=rect.x+'px';card.style.top=rect.y+'px';card.style.width=rect.w+'px';card.style.height=rect.h+'px';
+  focusOverlay.classList.remove('active');world.classList.remove('blurred');
+  if(!fogDissolved)fogCanvas.classList.remove('fog-hidden');
+  clearConnections();
+  const id=focusedIslandId;focusedIslandId=null;
+  setTimeout(()=>{
+    const islandEl=islandEls[id];
+    if(islandEl){islandEl.style.transition='opacity 0.15s ease';islandEl.classList.remove('hidden-by-focus');requestAnimationFrame(()=>{setTimeout(()=>{if(islandEl)islandEl.style.transition=''},200)})}
+    if(card.parentNode)card.parentNode.removeChild(card);
+  },380);
+}
+
+function resizeConnectionCanvas(){connectionCanvas.width=window.innerWidth;connectionCanvas.height=window.innerHeight}
+
+let connectionAnimId=null,dashOffset=0,connectionCurves=[];
+
+function drawConnections(data){
+  resizeConnectionCanvas();
+  if(connectionAnimId)cancelAnimationFrame(connectionAnimId);
+  connectionCurves=[];
+  const fromCx=window.innerWidth/2,fromCy=window.innerHeight/2;
+  data.relatedTo.forEach(relId=>{
+    const relData=ISLANDS.find(d=>d.id===relId);
+    if(!relData)return;
+    const toRect=getIslandScreenRect(relData);
+    const dx=toRect.cx-fromCx,dy=toRect.cy-fromCy;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const perpX=-dy/(dist||1),perpY=dx/(dist||1);
+    const curvature=dist*0.12;
+    const cpx=(fromCx+toRect.cx)/2+perpX*curvature;
+    const cpy=(fromCy+toRect.cy)/2+perpY*curvature;
+    connectionCurves.push({toCx:toRect.cx,toCy:toRect.cy,cpx,cpy,color:data.primaryColor});
+  });
+  function render(){
+    connCtx.clearRect(0,0,connectionCanvas.width,connectionCanvas.height);
+    connectionCurves.forEach(curve=>{
+      connCtx.save();connCtx.beginPath();
+      connCtx.moveTo(fromCx,fromCy);connCtx.quadraticCurveTo(curve.cpx,curve.cpy,curve.toCx,curve.toCy);
+      connCtx.strokeStyle=hexToRgba(curve.color,0.15);connCtx.lineWidth=1.2;
+      connCtx.setLineDash([3,14]);connCtx.lineDashOffset=-dashOffset;
+      connCtx.shadowColor=hexToRgba(curve.color,0.25);connCtx.shadowBlur=4;
+      connCtx.stroke();connCtx.restore();
+      for(let p=0;p<3;p++){
+        const t=((dashOffset*0.006+p*0.33)%1+1)%1;
+        const px=(1-t)*(1-t)*fromCx+2*(1-t)*t*curve.cpx+t*t*curve.toCx;
+        const py=(1-t)*(1-t)*fromCy+2*(1-t)*t*curve.cpy+t*t*curve.toCy;
+        const size=1.5+Math.sin(t*Math.PI)*1.5;
+        const alpha=0.3+Math.sin(t*Math.PI)*0.4;
+        connCtx.save();connCtx.beginPath();connCtx.arc(px,py,size,0,Math.PI*2);
+        connCtx.fillStyle=hexToRgba(curve.color,alpha);connCtx.shadowColor=curve.color;connCtx.shadowBlur=8;
+        connCtx.fill();connCtx.restore();
+      }
+    });
+    dashOffset+=0.6;connectionAnimId=requestAnimationFrame(render);
+  }
+  render();
+}
+
+function clearConnections(){if(connectionAnimId){cancelAnimationFrame(connectionAnimId);connectionAnimId=null}connCtx.clearRect(0,0,connectionCanvas.width,connectionCanvas.height);connectionCurves=[]}
+
+function showHint(){
+  hintEl.textContent=isMobile?'划动探索展厅，点击照亮展品':'移动光标探索展厅';
+  setTimeout(()=>{hintEl.textContent='点击浮岛，点亮展品'},5000);
+  setTimeout(()=>hintEl.classList.add('fade'),12000);
+}
+
+function init(){
+  initNoise();initStars();createIslands();centerView();
+  initFog();resizeConnectionCanvas();setupViewportControls();
+  updateRevealCounter();startFogLoop();showHint();
+}
+
+init();
+</script>
+</body>
+</html>
