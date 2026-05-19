@@ -2,6 +2,8 @@
 
 > 一个可访问的静态网页，用于展示 AI 协创图像，外化思维结构。
 
+[在线预览](https://brunsonliu.github.io/picture_showcase/)
+
 ---
 
 ## 当前状态
