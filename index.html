@@ -279,32 +279,72 @@ let spotlightMaskTex=null;
 
 function hexToRgba(hex,alpha){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${alpha})`}
 function hexToRgb(hex){return{r:parseInt(hex.slice(1,3),16),g:parseInt(hex.slice(3,5),16),b:parseInt(hex.slice(5,7),16)}}
+function createRng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296}}
 
 function generateFogCloudTexture(){
   const size=1024;
   const c=document.createElement('canvas');
   c.width=size;c.height=size;
   const ctx=c.getContext('2d');
-  ctx.fillStyle='rgba(0,0,0,0)';
-  ctx.fillRect(0,0,size,size);
-  const blobs=[
-    {x:200,y:180,r:280,a:0.6},{x:700,y:150,r:240,a:0.5},{x:450,y:400,r:320,a:0.7},
-    {x:150,y:650,r:260,a:0.55},{x:600,y:700,r:300,a:0.6},{x:850,y:450,r:220,a:0.45},
-    {x:350,y:100,r:180,a:0.4},{x:100,y:400,r:200,a:0.5},{x:800,y:800,r:250,a:0.55},
-    {x:500,y:850,r:280,a:0.5},{x:900,y:200,r:190,a:0.4},{x:50,y:100,r:160,a:0.35},
-    {x:300,y:550,r:230,a:0.5},{x:750,y:500,r:210,a:0.45},{x:550,y:200,r:190,a:0.4}
-  ];
-  blobs.forEach(b=>{
-    const grad=ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);
-    grad.addColorStop(0,`rgba(13,14,16,${b.a})`);
-    grad.addColorStop(0.3,`rgba(13,14,16,${b.a*0.7})`);
-    grad.addColorStop(0.6,`rgba(13,14,16,${b.a*0.35})`);
-    grad.addColorStop(1,'rgba(13,14,16,0)');
-    ctx.fillStyle=grad;
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
-    ctx.fill();
-  });
+  const rand=createRng(42);
+  ctx.clearRect(0,0,size,size);
+
+  ctx.save();
+  ctx.filter='blur(34px)';
+  for(let i=0;i<38;i++){
+    const x=rand()*size,y=rand()*size;
+    const rx=130+rand()*280,ry=36+rand()*120;
+    const rot=rand()*Math.PI;
+    const a=0.1+rand()*0.14;
+    for(let wx=-1;wx<=1;wx++){
+      for(let wy=-1;wy<=1;wy++){
+        const px=x+wx*size,py=y+wy*size;
+        const grad=ctx.createRadialGradient(px,py,0,px,py,Math.max(rx,ry));
+        grad.addColorStop(0,`rgba(60,66,74,${a})`);
+        grad.addColorStop(0.45,`rgba(38,44,52,${a*0.62})`);
+        grad.addColorStop(1,'rgba(12,14,18,0)');
+        ctx.fillStyle=grad;
+        ctx.translate(px,py);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        ctx.ellipse(0,0,rx,ry,0,0,Math.PI*2);
+        ctx.fill();
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.filter='blur(34px)';
+      }
+    }
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  for(let i=0;i<22;i++){
+    const x=rand()*size,y=rand()*size;
+    const r=120+rand()*260;
+    const alpha=0.035+rand()*0.045;
+    for(let wx=-1;wx<=1;wx++){
+      for(let wy=-1;wy<=1;wy++){
+        const px=x+wx*size,py=y+wy*size;
+        const grad=ctx.createRadialGradient(px,py,0,px,py,r);
+        grad.addColorStop(0,`rgba(86,90,98,${alpha})`);
+        grad.addColorStop(1,'rgba(86,90,98,0)');
+        ctx.fillStyle=grad;
+        ctx.beginPath();
+        ctx.arc(px,py,r,0,Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+
+  const grain=ctx.getImageData(0,0,size,size);
+  for(let i=0;i<grain.data.length;i+=4){
+    const g=(rand()-0.5)*10;
+    grain.data[i]=Math.max(0,Math.min(255,grain.data[i]+g));
+    grain.data[i+1]=Math.max(0,Math.min(255,grain.data[i+1]+g));
+    grain.data[i+2]=Math.max(0,Math.min(255,grain.data[i+2]+g));
+  }
+  ctx.putImageData(grain,0,0);
   return c;
 }
 
@@ -316,22 +356,23 @@ function generateSpotlightMask(){
   ctx.fillStyle='rgba(0,0,0,0)';
   ctx.fillRect(0,0,size,size);
   const cx=size/2,cy=size/2;
-  const mainR=size*0.38;
+  const mainR=size*0.34;
   const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,mainR);
   grad.addColorStop(0,'rgba(255,255,255,1)');
-  grad.addColorStop(0.5,'rgba(255,255,255,0.7)');
-  grad.addColorStop(0.75,'rgba(255,255,255,0.25)');
-  grad.addColorStop(0.9,'rgba(255,255,255,0.05)');
+  grad.addColorStop(0.42,'rgba(255,255,255,0.78)');
+  grad.addColorStop(0.68,'rgba(255,255,255,0.2)');
+  grad.addColorStop(0.9,'rgba(255,255,255,0.035)');
   grad.addColorStop(1,'rgba(255,255,255,0)');
   ctx.fillStyle=grad;
   ctx.beginPath();
   ctx.arc(cx,cy,mainR,0,Math.PI*2);
   ctx.fill();
   const wisps=[
-    {x:cx-40,y:cy-50,r:80,a:0.4},{x:cx+55,y:cy-30,r:70,a:0.35},
-    {x:cx-30,y:cy+60,r:90,a:0.3},{x:cx+70,y:cy+40,r:60,a:0.25},
-    {x:cx-80,y:cy+10,r:50,a:0.2},{x:cx+20,y:cy-80,r:65,a:0.3},
-    {x:cx-60,y:cy-20,r:55,a:0.25},{x:cx+40,y:cy+70,r:75,a:0.2}
+    {x:cx-48,y:cy-58,r:92,a:0.36},{x:cx+62,y:cy-28,r:74,a:0.3},
+    {x:cx-28,y:cy+70,r:110,a:0.26},{x:cx+76,y:cy+48,r:64,a:0.22},
+    {x:cx-92,y:cy+12,r:54,a:0.18},{x:cx+24,y:cy-94,r:72,a:0.28},
+    {x:cx-72,y:cy-18,r:62,a:0.22},{x:cx+42,y:cy+82,r:84,a:0.18},
+    {x:cx+112,y:cy-4,r:36,a:0.12},{x:cx-16,y:cy+116,r:42,a:0.12}
   ];
   wisps.forEach(w=>{
     const g=ctx.createRadialGradient(w.x,w.y,0,w.x,w.y,w.r);
@@ -423,15 +464,19 @@ function initFog(){
   fogCanvas.height=window.innerHeight;
   fogCloudTex=generateFogCloudTexture();
   spotlightMaskTex=generateSpotlightMask();
-  fogCtx.fillStyle='rgb(13,14,16)';
+  const grad=fogCtx.createLinearGradient(0,0,0,fogCanvas.height);
+  grad.addColorStop(0,'rgb(7,8,10)');
+  grad.addColorStop(0.45,'rgb(12,14,17)');
+  grad.addColorStop(1,'rgb(16,17,20)');
+  fogCtx.fillStyle=grad;
   fogCtx.fillRect(0,0,fogCanvas.width,fogCanvas.height);
 }
 
 function startFogLoop(){
   const fogLayers=[
-    {speedX:0.25,speedY:0.02,scale:1.0,opacity:0.04,offsetX:0,offsetY:0},
-    {speedX:-0.15,speedY:0.04,scale:1.4,opacity:0.03,offsetX:300,offsetY:200},
-    {speedX:0.08,speedY:-0.02,scale:1.8,opacity:0.02,offsetX:600,offsetY:400}
+    {speedX:0.12,speedY:0.015,scale:1.1,opacity:0.2,offsetX:0,offsetY:0},
+    {speedX:-0.08,speedY:0.035,scale:1.65,opacity:0.13,offsetX:300,offsetY:200},
+    {speedX:0.045,speedY:-0.018,scale:2.2,opacity:0.085,offsetX:600,offsetY:400}
   ];
 
   function fogFrame(){
@@ -440,7 +485,7 @@ function startFogLoop(){
       const now=performance.now();
       const vw=fogCanvas.width,vh=fogCanvas.height;
 
-      fogCtx.fillStyle='rgba(13,14,16,0.003)';
+      fogCtx.fillStyle='rgba(9,10,12,0.0035)';
       fogCtx.fillRect(0,0,vw,vh);
 
       fogCtx.save();
@@ -451,30 +496,35 @@ function startFogLoop(){
         const ox=(t*layer.speedX*60+layer.offsetX)%tileSize;
         const oy=(t*layer.speedY*60+layer.offsetY)%tileSize;
         fogCtx.save();
-        fogCtx.globalAlpha=layer.opacity;
-        fogCtx.translate(ox,oy);
+        fogCtx.globalAlpha=layer.opacity*(isMobile?0.8:1);
+        fogCtx.translate(ox-tileSize,oy-tileSize);
         const sx=Math.ceil(vw/tileSize)+2;
         const sy=Math.ceil(vh/tileSize)+2;
-        for(let tx=-1;tx<=sx;tx++){
-          for(let ty=-1;ty<=sy;ty++){
+        for(let tx=0;tx<=sx+2;tx++){
+          for(let ty=0;ty<=sy+2;ty++){
             fogCtx.drawImage(fogCloudTex,tx*tileSize,ty*tileSize,tileSize,tileSize);
           }
         }
         fogCtx.restore();
       });
+      const shade=fogCtx.createRadialGradient(vw*0.5,vh*0.42,Math.min(vw,vh)*0.18,vw*0.5,vh*0.5,Math.max(vw,vh)*0.72);
+      shade.addColorStop(0,'rgba(0,0,0,0)');
+      shade.addColorStop(1,'rgba(0,0,0,0.08)');
+      fogCtx.fillStyle=shade;
+      fogCtx.fillRect(0,0,vw,vh);
       fogCtx.restore();
 
       ISLANDS.forEach(data=>{
         if(data.revealed||data.hidden)return;
         const rect=getIslandScreenRect(data);
-        const seepR=Math.max(rect.w,rect.h)*0.7;
-        const pulse=0.02+Math.sin(now*0.002+rect.cx*0.01)*0.008;
+        const seepR=Math.max(rect.w,rect.h)*0.52;
+        const pulse=0.006+Math.sin(now*0.002+rect.cx*0.01)*0.002;
         const rgb=hexToRgb(data.primaryColor);
         fogCtx.save();
         fogCtx.globalCompositeOperation='source-over';
         const grad=fogCtx.createRadialGradient(rect.cx,rect.cy,0,rect.cx,rect.cy,seepR);
         grad.addColorStop(0,`rgba(${rgb.r},${rgb.g},${rgb.b},${pulse})`);
-        grad.addColorStop(0.4,`rgba(${rgb.r},${rgb.g},${rgb.b},${pulse*0.4})`);
+        grad.addColorStop(0.38,`rgba(${rgb.r},${rgb.g},${rgb.b},${pulse*0.25})`);
         grad.addColorStop(1,`rgba(${rgb.r},${rgb.g},${rgb.b},0)`);
         fogCtx.fillStyle=grad;
         fogCtx.beginPath();
@@ -486,10 +536,10 @@ function startFogLoop(){
       if(!easterEggState.revealed){
         const sx=easterEggState.worldX*zoom+panX;
         const sy=easterEggState.worldY*zoom+panY;
-        const ePulse=0.012+Math.sin(now*0.0015)*0.005;
+        const ePulse=0.004+Math.sin(now*0.0015)*0.0015;
         fogCtx.save();
         fogCtx.globalCompositeOperation='source-over';
-        const grad=fogCtx.createRadialGradient(sx,sy,0,sx,sy,60);
+        const grad=fogCtx.createRadialGradient(sx,sy,0,sx,sy,42);
         grad.addColorStop(0,`rgba(240,160,192,${ePulse})`);
         grad.addColorStop(1,'rgba(240,160,192,0)');
         fogCtx.fillStyle=grad;
@@ -500,15 +550,15 @@ function startFogLoop(){
       }
 
       if(mouseOnScreen){
-        const baseR=isMobile?200:180;
-        const breathR=baseR+Math.sin(now*0.003)*8;
-        spotlightAngle+=0.008;
+        const baseR=isMobile?215:195;
+        const breathR=baseR+Math.sin(now*0.0022)*10;
+        spotlightAngle+=0.005;
         fogCtx.save();
         fogCtx.globalCompositeOperation='destination-out';
         fogCtx.translate(mouseX,mouseY);
         fogCtx.rotate(spotlightAngle);
-        const drawSize=breathR*2.8;
-        fogCtx.globalAlpha=0.35;
+        const drawSize=breathR*2.65;
+        fogCtx.globalAlpha=0.28;
         fogCtx.drawImage(spotlightMaskTex,-drawSize/2,-drawSize/2,drawSize,drawSize);
         fogCtx.restore();
       }
